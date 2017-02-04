@@ -80,7 +80,7 @@ def main(filename, output='output.mkv', end_episode_thresh=30, min_episode_lengt
 			episodes.append(e)
 			start_num = None
 
-	if (last_chapter.end - start_chapter.start).total_seconds() > min_episode_length:
+	if start_num is not None and (last_chapter.end - start_chapter.start).total_seconds() > min_episode_length:
 		episodes.append(Episode(start_num, last_num, start_chapter, last_chapter))
 
 	if list_episodes:
