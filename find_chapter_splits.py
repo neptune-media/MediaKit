@@ -93,7 +93,7 @@ def enumerate_chapters(metadata):
 
 
 def main(filename, output='output.mkv', end_episode_thresh=30, min_episode_length=1200, list_episodes=False,
-	 iframe_filename=None, new_episode_grace=2):
+	 iframe_filename=None, min_chapters=2):
 	metadata = get_metadata(filename)
 	chapters = filter(lambda x: x[1].enabled, enumerate_chapters(metadata))
 	iframe_reader = None
@@ -104,7 +104,7 @@ def main(filename, output='output.mkv', end_episode_thresh=30, min_episode_lengt
 	eBuilder = EpisodeBuilder(
 		min_length=min_episode_length,
 		ending_chapter_threshold=end_episode_thresh,
-		min_chapters=new_episode_grace,
+		min_chapters=min_chapters,
 	)
 
 	for num, ch in chapters:
