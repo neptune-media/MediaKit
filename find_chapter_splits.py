@@ -8,12 +8,50 @@ from datetime import timedelta
 
 
 class Episode(object):
-	def __init__(self, start_num, end_num, start_ch, end_ch, discard=False):
-		self.start_num = start_num
-		self.end_num = end_num
+	def __init__(self, start_ch, end_ch, discard=False):
 		self.start_chapter = start_ch
 		self.end_chapter = end_ch
 		self.discard = discard
+
+
+class EpisodeBuilder(object):
+	def __init__(self, min_length, ending_chapter_threshold, min_chapters):
+		self.start = None
+		self.end = None
+		self.num_chapters = 0
+		self.min_length = min_length
+		self.ending_chapter_threshold = ending_chapter_threshold
+		self.min_chapters = min_chapters
+
+	def add_chapter(self, ch):
+		if self.start is None:
+			self.start = ch
+
+		self.end = ch
+		self.num_chapters += 1
+
+	def build(self, ignore_missing_end=False):
+
+		# If we haven't met the minimum, don't return anything
+		if self.num_chapters < self.min_chapters + 1:
+			return None
+
+		# Check if last chapter meets criteria for stopping
+		if not ignore_missing_end and (self.end.end - self.end.start).total_seconds() > self.ending_chapter_threshold:
+			return None
+
+		duration = self.end.end - self.start.start
+		e = Episode(self.start, self.end)
+
+		# Discard episode if episode length is too short
+		# (such as the ending bits for DVD credits, etc)
+		if duration.total_seconds() < self.min_length:
+			e.discard = True
+
+		# Reset state to start a new episode
+		self.start = self.end = None
+		self.num_chapters = 0
+		return e
 
 
 class IFrameSeeker(object):
@@ -63,50 +101,39 @@ def main(filename, output='output.mkv', end_episode_thresh=30, min_episode_lengt
 		iframe_reader = IFrameSeeker(iframe_filename)
 
 	episodes = []
+	eBuilder = EpisodeBuilder(
+		min_length=min_episode_length,
+		ending_chapter_threshold=end_episode_thresh,
+		min_chapters=new_episode_grace,
+	)
 
-	start_num = None
-	start_chapter = None
-	last_num = None
-	last_chapter = None
-	grace_remaining = new_episode_grace
 	for num, ch in chapters:
 		#print "Processing chapter length %s\t(offset @ %s)" % ((ch.end - ch.start).total_seconds(), ch.start)
-		last_num = num
-		last_chapter = ch
-		grace_remaining -= 1
-		if start_num is None:
-			start_num = num
-			start_chapter = ch
-			if iframe_reader and num < len(chapters):
-				start_chapter.start = iframe_reader.current()
+		if iframe_reader and num < len(chapters):
+			ch.start = iframe_reader.current()
 
 		# Advance I-Frame pointer to just before end of chapter
 		# Stops advance if at end of file
 		while iframe_reader and iframe_reader.peek() is not None and ch.end > iframe_reader.peek():
 			iframe_reader.next()
-		duration = ch.end - ch.start
 
-		# Tracks less than end_episode_thresh are considered the last chapter of the episode
-		if grace_remaining < 0 and duration.total_seconds() < end_episode_thresh:
-			if iframe_reader and num < len(chapters):
-				# Adjust end of chapter to current I-frame
-				ch.end = iframe_reader.current()
+		# Adjust end of chapter to I-Frame
+		if iframe_reader:
+			ch.end = iframe_reader.current()
 
-				# Move to next I-Frame if one is available
-				if iframe_reader.peek() is not None:
-					iframe_reader.next()
-			e = Episode(start_num, num, start_chapter, ch)
-
-			# If episode is less than min_episode_length, discard
-			if (ch.end - start_chapter.start).total_seconds() < min_episode_length:
-				e.discard = True
+		# Add chapter and try to build episode
+		eBuilder.add_chapter(ch)
+		e = eBuilder.build()
+		if e is not None:
+			# Move to next I-Frame if one is available
+			if iframe_reader and iframe_reader.peek() is not None:
+				iframe_reader.next()
 			episodes.append(e)
-			start_num = None
-			grace_remaining = new_episode_grace
 
-
-	if start_num is not None and (last_chapter.end - start_chapter.start).total_seconds() > min_episode_length:
-		episodes.append(Episode(start_num, last_num, start_chapter, last_chapter))
+	# End of file, check if we found enough for another episode
+	e = eBuilder.build(True)
+	if e is not None:
+		episodes.append(e)
 
 	if list_episodes:
 		for ep in episodes:
