@@ -24,7 +24,8 @@ def main(input_format, show_name, season, episode_start, work_dir, dry_run):
 
 	for f in output_files:
 		print "%s -> %s" % (f[0], f[1])
-		os.rename(f[0], f[1])
+		if not dry_run:
+			os.rename(f[0], f[1])
 	
 
 if __name__ == "__main__":
